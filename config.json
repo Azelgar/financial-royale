@@ -1,0 +1,16 @@
+{
+    "capital_inicial": 100,
+    "L_max": 3,
+    "alpha_leverage": 0.02,
+    "lambda_volatility": 0.0005,
+    "beta_coverage": 0.7,
+    "shock_week_min": 4,
+    "shock_week_max": 8,
+    "shock_sev_low": 0.15,
+    "shock_sev_mid": 0.3,
+    "shock_sev_high": 0.5,
+    "weight_money": 0.45,
+    "mu_expansion": 0.08,
+    "sigma_expansion": 0.04,
+    "max_weeks": 10
+}
