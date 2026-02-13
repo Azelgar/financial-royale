@@ -5,6 +5,7 @@ import sys
 import random
 import psycopg2
 import matplotlib.pyplot as plt
+import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'engine'))
 from engine import Engine
@@ -28,7 +29,7 @@ cursor = conn.cursor()
 with open("database/schema.sql") as f:
     cursor.execute(f.read())
 
-st.title("Financial Royale v5 - Plataforma Académica")
+st.title("Financial Royale v5.1 - Plataforma Académica")
 
 # ==========================
 # LOGIN SIMPLE
@@ -58,10 +59,6 @@ if st.session_state.role is None:
 
     st.stop()
 
-# ==========================
-# MENÚ SEGÚN ROL
-# ==========================
-
 role = st.session_state.role
 
 st.sidebar.write(f"Rol actual: {role}")
@@ -70,9 +67,9 @@ if st.sidebar.button("Cerrar sesión"):
     st.session_state.role = None
     st.rerun()
 
-# ==========================
-# MENÚ DOCENTE
-# ==========================
+# =========================================================
+# ======================= DOCENTE =========================
+# =========================================================
 
 if role == "Docente":
 
@@ -81,7 +78,9 @@ if role == "Docente":
         ["Crear Cohorte", "Crear Jugador", "Dashboard Cohorte", "Ranking Global"]
     )
 
-    # Crear Cohorte
+    # ======================
+    # CREAR COHORTE
+    # ======================
     if menu == "Crear Cohorte":
 
         name = st.text_input("Nombre cohorte")
@@ -105,7 +104,9 @@ if role == "Docente":
 
             st.success("Cohorte creada")
 
-    # Crear Jugador
+    # ======================
+    # CREAR JUGADOR
+    # ======================
     elif menu == "Crear Jugador":
 
         cursor.execute("SELECT id, name FROM cohorts")
@@ -130,32 +131,97 @@ if role == "Docente":
                 )
                 st.success("Jugador registrado")
 
-    # Dashboard Cohorte
+    # ======================
+    # DASHBOARD COHORTE
+    # ======================
     elif menu == "Dashboard Cohorte":
 
-        cursor.execute("SELECT COUNT(*) FROM players")
-        total_players = cursor.fetchone()[0]
+        cursor.execute("SELECT id, name FROM cohorts")
+        cohorts = cursor.fetchall()
 
-        cursor.execute("SELECT AVG(capital) FROM players")
-        avg_capital = cursor.fetchone()[0]
+        if not cohorts:
+            st.warning("No hay cohortes registradas.")
+        else:
 
-        st.metric("Total Jugadores", total_players)
-        st.metric("Capital Promedio", round(avg_capital or 0, 2))
+            cohort_dict = {c[1]: c[0] for c in cohorts}
 
-    # Ranking Global
+            selected_cohort = st.selectbox(
+                "Seleccionar cohorte",
+                list(cohort_dict.keys())
+            )
+
+            cohort_id = cohort_dict[selected_cohort]
+
+            cursor.execute(
+                "SELECT id, capital, week FROM players WHERE cohort_id=%s",
+                (cohort_id,)
+            )
+            players = cursor.fetchall()
+
+            if not players:
+                st.warning("No hay jugadores en esta cohorte.")
+            else:
+
+                capitals = [p[1] for p in players]
+                weeks = [p[2] for p in players]
+
+                total_players = len(players)
+                total_capital = sum(capitals)
+                avg_capital = total_capital / total_players
+                avg_week = sum(weeks) / total_players
+
+                volatility_list = []
+
+                for p in players:
+                    cursor.execute(
+                        "SELECT capital FROM history WHERE player_id=%s ORDER BY week",
+                        (p[0],)
+                    )
+                    history_rows = cursor.fetchall()
+                    history = [h[0] for h in history_rows]
+
+                    if len(history) > 1:
+                        volatility_list.append(np.std(history))
+
+                avg_volatility = (
+                    sum(volatility_list) / len(volatility_list)
+                    if volatility_list else 0
+                )
+
+                cursor.execute(
+                    "SELECT shock_week, shock_severity FROM cohorts WHERE id=%s",
+                    (cohort_id,)
+                )
+                shock_week, shock_severity = cursor.fetchone()
+
+                st.subheader("Métricas de Cohorte")
+
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Jugadores", total_players)
+                col2.metric("Capital Total", round(total_capital, 2))
+                col3.metric("Capital Promedio", round(avg_capital, 2))
+
+                col4, col5, col6 = st.columns(3)
+                col4.metric("Semana Promedio", round(avg_week, 2))
+                col5.metric("Volatilidad Promedio", round(avg_volatility, 4))
+                col6.metric("Shock Programado", f"Semana {shock_week}")
+
+                st.write(f"Severidad Shock: {shock_severity}")
+
+    # ======================
+    # RANKING GLOBAL
+    # ======================
     elif menu == "Ranking Global":
 
-        cursor.execute("SELECT id, name, capital FROM players")
-        players = cursor.fetchall()
+        cursor.execute("SELECT name, capital FROM players ORDER BY capital DESC")
+        ranking = cursor.fetchall()
 
-        ranking = sorted(players, key=lambda x: x[2], reverse=True)
+        for i, r in enumerate(ranking, 1):
+            st.write(f"{i}. {r[0]} - {round(r[1],2)}")
 
-        for i, p in enumerate(ranking, 1):
-            st.write(f"{i}. {p[1]} - {round(p[2],2)}")
-
-# ==========================
-# MENÚ ALUMNO
-# ==========================
+# =========================================================
+# ======================= ALUMNO ==========================
+# =========================================================
 
 elif role == "Alumno":
 
@@ -191,7 +257,6 @@ elif role == "Alumno":
                 "SELECT capital, week FROM players WHERE id=%s",
                 (player_id,)
             )
-
             player_data = cursor.fetchone()
 
             if player_data:
