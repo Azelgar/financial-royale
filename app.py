@@ -1,10 +1,10 @@
 
 import streamlit as st
-import sqlite3
 import json
 import os
 import sys
 import random
+import psycopg2
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'engine'))
@@ -16,11 +16,15 @@ with open("config.json") as f:
 engine = Engine(config)
 
 os.makedirs("database", exist_ok=True)
-conn = sqlite3.connect("database/game.db", check_same_thread=False)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+conn = psycopg2.connect(DATABASE_URL)
+conn.autocommit = True
 cursor = conn.cursor()
 
+
 with open("database/schema.sql") as f:
-    cursor.executescript(f.read())
+    cursor.execute(f.read())
 conn.commit()
 
 st.title("Financial Royale MVP v2.1")
