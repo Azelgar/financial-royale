@@ -6,6 +6,7 @@ import random
 import psycopg2
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'engine'))
 from engine import Engine
@@ -29,7 +30,7 @@ cursor = conn.cursor()
 with open("database/schema.sql") as f:
     cursor.execute(f.read())
 
-st.title("Financial Royale v5.1 - Plataforma Académica")
+st.title("Financial Royale v5.2 - Plataforma Académica")
 
 # ==========================
 # LOGIN SIMPLE
@@ -207,6 +208,54 @@ if role == "Docente":
                 col6.metric("Shock Programado", f"Semana {shock_week}")
 
                 st.write(f"Severidad Shock: {shock_severity}")
+
+                # ======================
+                # EXPORTACIÓN CSV
+                # ======================
+
+                st.markdown("---")
+                st.subheader("Exportación Oficial")
+
+                if st.button("Exportar Resultados Oficiales"):
+
+                    export_data = []
+
+                    for p in players:
+
+                        player_id = p[0]
+                        final_capital = p[1]
+                        final_week = p[2]
+
+                        cursor.execute(
+                            "SELECT capital FROM history WHERE player_id=%s ORDER BY week",
+                            (player_id,)
+                        )
+                        history_rows = cursor.fetchall()
+                        history = [h[0] for h in history_rows]
+
+                        if history:
+                            ic_value = engine.calculate_ic(history)
+                            volatility = np.std(history) if len(history) > 1 else 0
+                        else:
+                            ic_value = 0
+                            volatility = 0
+
+                        export_data.append({
+                            "Jugador_ID": player_id,
+                            "Capital_Final": round(final_capital, 2),
+                            "Semana_Final": final_week,
+                            "IC_Final": round(ic_value, 4),
+                            "Volatilidad": round(volatility, 4)
+                        })
+
+                    df = pd.DataFrame(export_data)
+
+                    st.download_button(
+                        label="Descargar CSV Oficial",
+                        data=df.to_csv(index=False),
+                        file_name=f"Resultados_{selected_cohort}.csv",
+                        mime="text/csv"
+                    )
 
     # ======================
     # RANKING GLOBAL
