@@ -20,3 +20,5 @@ CREATE TABLE IF NOT EXISTS history (
     week INTEGER,
     capital REAL
 );
+CREATE INDEX IF NOT EXISTS idx_players_cohort ON players(cohort_id);
+CREATE INDEX IF NOT EXISTS idx_history_player ON history(player_id);

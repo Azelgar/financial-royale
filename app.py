@@ -9,21 +9,26 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.join(os.path.dirname(__file__), 'engine'))
 from engine import Engine
 
+# ==========================
+# CONFIG
+# ==========================
+
 with open("config.json") as f:
     config = json.load(f)
 
 engine = Engine(config)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
 conn = psycopg2.connect(DATABASE_URL)
 conn.autocommit = True
 cursor = conn.cursor()
 
-# Ejecutar schema
+# Ejecutar schema (seguro por IF NOT EXISTS)
 with open("database/schema.sql") as f:
     cursor.execute(f.read())
 
-st.title("Financial Royale MVP v2.1")
+st.title("Financial Royale MVP v4 - Institucional")
 
 menu = st.sidebar.selectbox(
     "Menú",
@@ -33,33 +38,39 @@ menu = st.sidebar.selectbox(
 # ==========================
 # CREAR COHORTE
 # ==========================
+
 if menu == "Crear Cohorte":
 
     name = st.text_input("Nombre cohorte")
 
     if st.button("Crear"):
-        shock_week = random.randint(
-            config["shock_week_min"],
-            config["shock_week_max"]
-        )
 
-        severity = random.choice([
-            config["shock_sev_low"],
-            config["shock_sev_mid"],
-            config["shock_sev_high"]
-        ])
+        try:
+            shock_week = random.randint(
+                config["shock_week_min"],
+                config["shock_week_max"]
+            )
 
-        cursor.execute(
-            "INSERT INTO cohorts (name, shock_week, shock_severity) VALUES (%s, %s, %s)",
-            (name, shock_week, severity)
-        )
+            severity = random.choice([
+                config["shock_sev_low"],
+                config["shock_sev_mid"],
+                config["shock_sev_high"]
+            ])
 
-        st.success("Cohorte creada")
+            cursor.execute(
+                "INSERT INTO cohorts (name, shock_week, shock_severity) VALUES (%s, %s, %s)",
+                (name, shock_week, severity)
+            )
 
+            st.success("Cohorte creada")
+
+        except Exception:
+            st.error("Error al crear cohorte.")
 
 # ==========================
 # CREAR JUGADOR
 # ==========================
+
 elif menu == "Crear Jugador":
 
     cursor.execute("SELECT id, name FROM cohorts")
@@ -68,6 +79,7 @@ elif menu == "Crear Jugador":
     if not cohorts:
         st.warning("Primero crea una cohorte.")
     else:
+
         cohort_dict = {c[1]: c[0] for c in cohorts}
 
         selected = st.selectbox(
@@ -78,16 +90,22 @@ elif menu == "Crear Jugador":
         name = st.text_input("Nombre jugador")
 
         if st.button("Registrar"):
-            cursor.execute(
-                "INSERT INTO players (name, cohort_id, capital) VALUES (%s, %s, %s)",
-                (name, cohort_dict[selected], config["capital_inicial"])
-            )
-            st.success("Jugador registrado")
 
+            try:
+                cursor.execute(
+                    "INSERT INTO players (name, cohort_id, capital) VALUES (%s, %s, %s)",
+                    (name, cohort_dict[selected], config["capital_inicial"])
+                )
+
+                st.success("Jugador registrado")
+
+            except Exception:
+                st.error("Error al registrar jugador.")
 
 # ==========================
 # JUGAR SEMANA
 # ==========================
+
 elif menu == "Jugar Semana":
 
     cursor.execute("SELECT id, name, cohort_id FROM players")
@@ -96,6 +114,7 @@ elif menu == "Jugar Semana":
     if not players:
         st.warning("No hay jugadores.")
     else:
+
         player_dict = {
             f"{p[1]} (ID {p[0]})": p for p in players
         }
@@ -117,58 +136,71 @@ elif menu == "Jugar Semana":
 
         player_data = cursor.fetchone()
 
-        if player_data:
+        if not player_data:
+            st.error("Jugador inválido.")
+        else:
+
             capital, week = player_data
 
-            if week > config["max_weeks"]:
+            if week >= config["max_weeks"]:
                 st.warning("Jugador ya completó las 10 semanas.")
             else:
-                if st.button("Ejecutar"):
 
-                    r = engine.generate_return()
-                    adj_r = engine.adjusted_return(L, r)
-                    exposure = L * 0.6
+                if st.button("Ejecutar Semana"):
 
-                    cursor.execute(
-                        "SELECT shock_week, shock_severity FROM cohorts WHERE id=%s",
-                        (cohort_id,)
-                    )
+                    try:
+                        with conn:
 
-                    shock_data = cursor.fetchone()
+                            r = engine.generate_return()
+                            adj_r = engine.adjusted_return(L, r)
+                            exposure = L * 0.6
 
-                    if shock_data:
-                        shock_week, severity = shock_data
+                            cursor.execute(
+                                "SELECT shock_week, shock_severity FROM cohorts WHERE id=%s",
+                                (cohort_id,)
+                            )
 
-                        shock = engine.shock_impact(
-                            week,
-                            capital,
-                            exposure,
-                            coverage,
-                            shock_week,
-                            severity
-                        )
+                            shock_data = cursor.fetchone()
 
-                        capital = capital * (1 + adj_r) - shock
-                        week += 1
+                            if not shock_data:
+                                st.error("Cohorte inválida.")
+                                st.stop()
 
-                        cursor.execute(
-                            "UPDATE players SET capital=%s, week=%s WHERE id=%s",
-                            (capital, week, player_id)
-                        )
+                            shock_week, severity = shock_data
 
-                        cursor.execute(
-                            "INSERT INTO history (player_id, week, capital) VALUES (%s, %s, %s)",
-                            (player_id, week, capital)
-                        )
+                            shock = engine.shock_impact(
+                                week,
+                                capital,
+                                exposure,
+                                coverage,
+                                shock_week,
+                                severity
+                            )
+
+                            capital_updated = capital * (1 + adj_r) - shock
+                            week_updated = week + 1
+
+                            cursor.execute(
+                                "UPDATE players SET capital=%s, week=%s WHERE id=%s",
+                                (capital_updated, week_updated, player_id)
+                            )
+
+                            cursor.execute(
+                                "INSERT INTO history (player_id, week, capital) VALUES (%s, %s, %s)",
+                                (player_id, week_updated, capital_updated)
+                            )
 
                         st.success(
-                            f"Nuevo capital: {round(capital, 2)}"
+                            f"Nuevo capital: {round(capital_updated, 2)}"
                         )
 
+                    except Exception:
+                        st.error("Error interno al ejecutar semana.")
 
 # ==========================
 # RANKING
 # ==========================
+
 elif menu == "Ranking":
 
     cursor.execute("SELECT id, name, capital FROM players")
